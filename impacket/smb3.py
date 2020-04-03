@@ -33,7 +33,7 @@ import random
 import string
 import struct
 from six import indexbytes, b
-from binascii import a2b_hex
+from binascii import a2b_hex, b2a_hex
 from contextlib import contextmanager
 from pyasn1.type.univ import noValue
 from Cryptodome.Cipher import AES
@@ -46,15 +46,13 @@ from impacket.spnego import SPNEGO_NegTokenInit, TypesMech, SPNEGO_NegTokenResp,
 from impacket.krb5.gssapi import KRB5_AP_REQ
 
 
+rand = random
 # For signing
 import hashlib, hmac, copy
 
-# Our random number generator
-try:
-    rand = random.SystemRandom()
-except NotImplementedError:
-    rand = random
-    pass
+
+def to_hex(*args):
+    return b2a_hex(*args).decode('utf-8')
 
 # Structs to be used
 TREE_CONNECT = {
@@ -134,7 +132,6 @@ class SMB3:
 
     def __init__(self, remote_name, remote_host, my_name=None, host_type=nmb.TYPE_SERVER, sess_port=445, timeout=60,
                  UDP=0, preferredDialect=None, session=None, negSessionResponse=None):
-
         # [MS-SMB2] Section 3
         self.RequireMessageSigning = False    #
         self.ConnectionTable = {}
@@ -392,10 +389,17 @@ class SMB3:
             transformHeader['OriginalMessageSize'] = len(plainText)
             transformHeader['EncryptionAlgorithm'] = SMB2_ENCRYPTION_AES128_CCM
             transformHeader['SessionID'] = self._Session['SessionID']
+            print('SMB 3.x Encryption: (AES-128-CCM)')
+            print('  - Encryption Key:    ' + to_hex(self._Session['EncryptionKey']))
+            print('  - Nonce:             ' + to_hex(b(transformHeader['Nonce'])))
+            print('  - Auth Data:         ' + to_hex(transformHeader.getData()[20:]))
+            print('  - Plaintext:         ' + to_hex(plainText))
             cipher = AES.new(self._Session['EncryptionKey'], AES.MODE_CCM,  b(transformHeader['Nonce']))
             cipher.update(transformHeader.getData()[20:])
             cipherText = cipher.encrypt(plainText)
+            print('  - Ciphertext:        ' + to_hex(cipherText))
             transformHeader['Signature'] = cipher.digest()
+            print('  - Signature:         ' + to_hex(transformHeader['Signature']))
             packet = transformHeader.getData() + cipherText
 
             self._NetBIOSSession.send_packet(packet)
@@ -498,8 +502,8 @@ class SMB3:
                     preAuthIntegrityCapabilities['HashAlgorithmCount'] = 1
                     preAuthIntegrityCapabilities['SaltLength'] = 32
                     preAuthIntegrityCapabilities['HashAlgorithms'] = b'\x01\x00'
-                    preAuthIntegrityCapabilities['Salt'] = ''.join([rand.choice(string.ascii_letters) for _ in
-                                                                     range(preAuthIntegrityCapabilities['SaltLength'])])
+                    print('using a hard coded salt')
+                    preAuthIntegrityCapabilities['Salt'] = 'OpoLWCaSKtyLplqxiabzECIHVSSJXoTw'
 
                     negotiateContext['Data'] = preAuthIntegrityCapabilities.getData()
                     negotiateContext['DataLength'] = len(negotiateContext['Data'])
@@ -528,7 +532,7 @@ class SMB3:
                     negSession['NegotiateContextList'] = negotiateContext.getData() + pad + negotiateContext2.getData()
 
                     # Do you want to enforce encryption? Uncomment here:
-                    #self._Connection['SupportsEncryption'] = True
+                    self._Connection['SupportsEncryption'] = True
 
             else:
                 negSession['Dialects'] = [SMB2_DIALECT_002, SMB2_DIALECT_21, SMB2_DIALECT_30]
@@ -765,6 +769,11 @@ class SMB3:
                                                                              self._Session['PreauthIntegrityHashValue'], 128)
                     self._Session['DecryptionKey'] = crypto.KDF_CounterMode (self._Session['SessionKey'], b"SMBS2CCipherKey\x00",
                                                                              self._Session['PreauthIntegrityHashValue'], 128)
+                    print('SMB 3.1.1 Key Generation:')
+                    print('  - Session Key:    ' + to_hex(self._Session['SessionKey']))
+                    print('  - KDF Label:      ' + to_hex(b"SMBC2SCipherKey\x00") + ' (static)')
+                    print('  - KDF Context:    ' + to_hex(self._Session['PreauthIntegrityHashValue']))
+                    print('  - Encryption Key: ' + to_hex(self._Session['EncryptionKey']))
                 else:
                     self._Session['ApplicationKey'] = crypto.KDF_CounterMode (self._Session['SessionKey'], b"SMB2APP\x00",
                                                                               b"SmbRpc\x00", 128)
@@ -967,6 +976,11 @@ class SMB3:
                                                                              self._Session['PreauthIntegrityHashValue'], 128)
                             self._Session['DecryptionKey'] = crypto.KDF_CounterMode (exportedSessionKey, b"SMBS2CCipherKey\x00",
                                                                              self._Session['PreauthIntegrityHashValue'], 128)
+                            print('SMB 3.1.1 Key Generation:')
+                            print('  - Session Key:    ' + to_hex(self._Session['SessionKey']))
+                            print('  - KDF Label:      ' + to_hex(b"SMBC2SCipherKey\x00") + ' (static)')
+                            print('  - KDF Context:    ' + to_hex(self._Session['PreauthIntegrityHashValue']))
+                            print('  - Encryption Key: ' + to_hex(self._Session['EncryptionKey']))
 
                         else:
                             self._Session['ApplicationKey'] = crypto.KDF_CounterMode (exportedSessionKey, b"SMB2APP\x00",

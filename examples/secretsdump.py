@@ -51,9 +51,16 @@ import logging
 import os
 import sys
 
+import random
+print('[*]\n[*] Seeding the random number generator', file=sys.stderr)
+random.seed(19900614)
+
+import impacket
 from impacket import version
 from impacket.examples import logger
 from impacket.smbconnection import SMBConnection
+print("[*] impacket loaded from: " + impacket.__file__ + '\n[*]', file=sys.stderr)
+
 
 from impacket.examples.secretsdump import LocalOperations, RemoteOperations, SAMHashes, LSASecrets, NTDSHashes
 from impacket.krb5.keytab import Keytab
@@ -102,7 +109,7 @@ class DumpSecrets:
             self.__lmhash, self.__nthash = options.hashes.split(':')
 
     def connect(self):
-        self.__smbConnection = SMBConnection(self.__remoteName, self.__remoteHost)
+        self.__smbConnection = SMBConnection(self.__remoteName, self.__remoteHost, preferredDialect=0x0311)
         if self.__doKerberos:
             self.__smbConnection.kerberosLogin(self.__username, self.__password, self.__domain, self.__lmhash,
                                                self.__nthash, self.__aesKey, self.__kdcHost)
@@ -144,6 +151,7 @@ class DumpSecrets:
                     self.__remoteOps.setExecMethod(self.__options.exec_method)
                     if self.__justDC is False and self.__justDCNTLM is False or self.__useVSSMethod is True:
                         self.__remoteOps.enableRegistry()
+                        sys.exit(os.EX_OK)
                         bootKey             = self.__remoteOps.getBootKey()
                         # Let's check whether target system stores LM Hashes
                         self.__noLMHash = self.__remoteOps.checkNoLMHashPolicy()
